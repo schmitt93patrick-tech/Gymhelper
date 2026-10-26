@@ -310,10 +310,22 @@ const idb={db:null,
 /* ---------- UI-Helfer ---------- */
 let tab='train';
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove('show'),2000)}
-function openSheet(html){$('#sheetBody').innerHTML='<div class="grab"></div>'+html;$('#sheet').classList.remove('hidden');$('#sheetBody').scrollTop=0}
-function closeSheet(){animStop();$('#sheet').classList.add('hidden');$('#sheetBody').innerHTML='';objURLs.forEach(u=>URL.revokeObjectURL(u));objURLs=[]}
+/* Zurück-Taste (Android): Fenster und Tabs im Verlauf führen */
+let sheetHist=false,backPending=false;
+const sheetOpen=()=>!$('#sheet').classList.contains('hidden');
+function openSheet(html){$('#sheetBody').innerHTML='<div class="grab"></div>'+html;$('#sheet').classList.remove('hidden');$('#sheetBody').scrollTop=0;
+ if(!sheetHist&&!backPending){try{history.pushState({sheet:1},'')}catch(e){}sheetHist=true}}
+function hideSheet(){animStop();$('#sheet').classList.add('hidden');$('#sheetBody').innerHTML='';objURLs.forEach(u=>URL.revokeObjectURL(u));objURLs=[]}
+window.addEventListener('popstate',e=>{
+ if(backPending){backPending=false;if(sheetOpen()&&!sheetHist){try{history.pushState({sheet:1},'')}catch(x){}sheetHist=true}return}
+ if(sheetOpen()){sheetHist=false;hideSheet();return}
+ const t=(e.state&&e.state.tab)||'train';if(t!==tab){tab=t;render();window.scrollTo(0,0)}
+});
+function closeSheet(){hideSheet();if(sheetHist){sheetHist=false;backPending=true;try{history.back()}catch(e){backPending=false}}}
 function askConfirm(msg,yesLabel,fn){window._cf=fn;openSheet(`<h2>${esc(msg)}</h2><div class="row" style="margin-top:18px"><button class="btn ghost grow" onclick="closeSheet()">Abbrechen</button><button class="btn danger grow" onclick="closeSheet();window._cf()">${esc(yesLabel)}</button></div>`)}
-function go(t){tab=t;render();window.scrollTo(0,0)}
+function go(t){if(t===tab){render();window.scrollTo(0,0);return}
+ try{if(tab==='train'&&t!=='train')history.pushState({tab:t},'');else if(t==='train'&&history.state&&history.state.tab&&history.state.tab!=='train'){history.back();return}else history.replaceState({tab:t},'')}catch(e){}
+ tab=t;render();window.scrollTo(0,0)}
 function render(){
  document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));
  $('#hdrAct').innerHTML='';
@@ -808,6 +820,7 @@ function importData(inp){
 }
 
 /* ---------- Start ---------- */
+try{history.replaceState({tab:'train'},'')}catch(e){}
 render();
 if(S.active)toast('Laufendes Training fortgesetzt');
 if('serviceWorker' in navigator&&location.protocol==='https:'){navigator.serviceWorker.register('sw.js').catch(()=>{})}
