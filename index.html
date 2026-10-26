@@ -106,6 +106,15 @@ ul.errs li:before{content:"✕";position:absolute;left:2px;color:var(--bad);font
 .day-item{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line);cursor:pointer}
 .day-item:first-of-type{border-top:0}
 .day-item .scheme{font-size:13px;color:var(--muted);white-space:nowrap}
+.anim{position:relative;background:radial-gradient(ellipse at 50% 35%,#22262f,#14171d 70%);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.anim svg{width:100%;height:auto;max-height:340px;display:block}
+.anim-ov{position:absolute;left:10px;top:10px;right:10px}
+.anim-ov span{display:inline-block;background:rgba(15,17,21,.85);border:1px solid var(--line);border-radius:10px;padding:5px 10px;font-size:13.5px;font-weight:650}
+.anim-ov span.bad{color:var(--bad);border-color:#5a2a2a}
+.anim-prog{height:4px;background:#232832}.anim-prog i{display:block;height:100%;background:var(--acc);width:0}
+.chip.bad{background:var(--bad);border-color:var(--bad);color:#200}
+.errbox{margin-top:10px;background:#2a1414;border:1px solid #5a2a2a;border-radius:12px;padding:10px 12px;font-size:14px}
+.vidbtn{display:inline-block;text-decoration:none;margin-top:10px}
 #toast{position:fixed;left:50%;top:calc(70px + env(safe-area-inset-top));transform:translateX(-50%);background:#2a2f3a;color:#fff;padding:10px 16px;border-radius:12px;z-index:30;font-size:14.5px;box-shadow:0 6px 20px rgba(0,0,0,.4);transition:opacity .25s;opacity:0;pointer-events:none}
 #toast.show{opacity:1}
 .hero{background:linear-gradient(135deg,#2a1708,#181b22 60%);border:1px solid #3d2612}
@@ -302,7 +311,7 @@ const idb={db:null,
 let tab='train';
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove('show'),2000)}
 function openSheet(html){$('#sheetBody').innerHTML='<div class="grab"></div>'+html;$('#sheet').classList.remove('hidden');$('#sheetBody').scrollTop=0}
-function closeSheet(){$('#sheet').classList.add('hidden');$('#sheetBody').innerHTML='';objURLs.forEach(u=>URL.revokeObjectURL(u));objURLs=[]}
+function closeSheet(){animStop();$('#sheet').classList.add('hidden');$('#sheetBody').innerHTML='';objURLs.forEach(u=>URL.revokeObjectURL(u));objURLs=[]}
 function askConfirm(msg,yesLabel,fn){window._cf=fn;openSheet(`<h2>${esc(msg)}</h2><div class="row" style="margin-top:18px"><button class="btn ghost grow" onclick="closeSheet()">Abbrechen</button><button class="btn danger grow" onclick="closeSheet();window._cf()">${esc(yesLabel)}</button></div>`)}
 function go(t){tab=t;render();window.scrollTo(0,0)}
 function render(){
@@ -436,6 +445,136 @@ function tickRest(){
 }
 function beep(){try{const a=new (window.AudioContext||window.webkitAudioContext)();const o=a.createOscillator(),g=a.createGain();o.frequency.value=880;o.connect(g);g.connect(a.destination);g.gain.setValueAtTime(.2,a.currentTime);g.gain.exponentialRampToValueAtTime(.001,a.currentTime+.5);o.start();o.stop(a.currentTime+.5)}catch(e){}}
 
+/* ---------- Animationen ---------- */
+const D2R=Math.PI/180,lerp=(a,b,t)=>a+(b-a)*t,ease=t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+const pt=(x,y)=>({x,y});
+// Punkt von p aus, Länge l, Winkel deg (0 = nach oben, 90 = nach rechts)
+const go_=(p,l,deg)=>pt(p.x+l*Math.sin(deg*D2R),p.y-l*Math.cos(deg*D2R));
+function ik(s,t,l1,l2,pick){const dx=t.x-s.x,dy=t.y-s.y;let d=Math.hypot(dx,dy);d=Math.min(Math.max(d,Math.abs(l1-l2)+.5),l1+l2-.3);
+ const a=Math.acos((l1*l1+d*d-l2*l2)/(2*l1*d)),base=Math.atan2(dy,dx);
+ return pick(pt(s.x+l1*Math.cos(base+a),s.y+l1*Math.sin(base+a)),pt(s.x+l1*Math.cos(base-a),s.y+l1*Math.sin(base-a)))}
+const AC={near:'#d5dbe4',far:'#6a7385',body:'#bcc4d0',eq:'#4b5363',eq2:'#2b313c',acc:'#ff7a1a',bad:'#ef5b5b'};
+const f1=n=>n.toFixed(1);
+const ln=(a,b,w,c)=>`<line x1="${f1(a.x)}" y1="${f1(a.y)}" x2="${f1(b.x)}" y2="${f1(b.y)}" stroke="${c}" stroke-width="${w}" stroke-linecap="round"/>`;
+function mus(a,b,s0,s1,w,off,col,op){if(op<=.02)return '';const dx=b.x-a.x,dy=b.y-a.y,L=Math.hypot(dx,dy),nx=-dy/L,ny=dx/L;
+ const m=(s0+s1)/2,c=pt(a.x+dx*m+nx*off,a.y+dy*m+ny*off),ang=Math.atan2(dy,dx)/D2R;
+ return `<ellipse cx="${f1(c.x)}" cy="${f1(c.y)}" rx="${f1(L*(s1-s0)/2)}" ry="${w}" transform="rotate(${f1(ang)} ${f1(c.x)} ${f1(c.y)})" fill="${col}" opacity="${Math.min(1,op).toFixed(2)}"/>`}
+function trunk(h,s,w,round,c){const mx=(h.x+s.x)/2,my=(h.y+s.y)/2,dx=s.x-h.x,dy=s.y-h.y,L=Math.hypot(dx,dy),nx=-dy/L,ny=dx/L;
+ return `<path d="M${f1(h.x)} ${f1(h.y)} Q${f1(mx+nx*round)} ${f1(my+ny*round)} ${f1(s.x)} ${f1(s.y)}" stroke="${c}" stroke-width="${w}" stroke-linecap="round" fill="none"/>`}
+const headC=(p,r=10)=>`<circle cx="${f1(p.x)}" cy="${f1(p.y)}" r="${r}" fill="${AC.near}"/>`;
+const floor=(x0,x1)=>`<line x1="${x0}" y1="0" x2="${x1}" y2="0" stroke="#2f3542" stroke-width="2"/>`;
+const shift=(p,dx,dy)=>pt(p.x+dx,p.y+dy);
+
+const ANIMS={
+ kniebeuge:{vb:'-80 -185 170 195',
+  phases:[['Kontrolliert ablassen · 2–3 s',2.5,0,1,.7],['Unten kurz halten',.5,1,1,.9],['Kraftvoll hochdrücken',1.4,1,0,1],['Oben einatmen & Bauch fest',1.1,0,0,.25]],
+  errors:['Oberkörper kippt weit nach vorne','Rücken rundet sich unten (Belastung Lendenwirbel)','Fallen lassen ohne Kontrolle'],
+  draw(p,err,eff){
+   const s=lerp(6,err?36:30,p),t=lerp(3,err?92:95,p),b=lerp(6,err?60:40,p),rnd=err?lerp(0,-10,p):0;
+   const A=pt(0,-6),K=go_(A,46,s),H=go_(K,48,-t),S=go_(H,58,b),Hd=go_(S,16,b+(err?30:6));
+   const B=go_(go_(S,8,b-90),3,b+180);
+   const pick=(e1,e2)=>e1.y>e2.y?e1:e2,E=ik(S,B,24,22,pick);
+   const fo=(p)=>shift(p,-4,-2);
+   let o=floor(-75,85);
+   o+=`<circle cx="${f1(B.x)}" cy="${f1(B.y)}" r="24" fill="${AC.eq2}" stroke="${AC.eq}" stroke-width="3"/>`;
+   o+=ln(fo(A),fo(K),11,AC.far)+ln(fo(K),fo(H),14,AC.far)+ln(pt(-12,-2),pt(18,-2),6,AC.far);
+   o+=trunk(H,S,20,rnd,AC.body);
+   o+=ln(A,K,11,AC.near)+ln(K,H,15,AC.near)+ln(pt(-8,-2),pt(22,-2),7,AC.near);
+   o+=headC(Hd,10);
+   o+=mus(K,H,.15,.95,6,6,AC.acc,err?eff*.45:eff)+mus(K,H,.72,1.08,7.5,-6,AC.acc,err?eff*.45:eff);
+   if(err)o+=mus(H,S,.05,.45,6,-6,AC.bad,eff+.2);
+   o+=ln(S,E,9,AC.near)+ln(E,B,8,AC.near)+`<circle cx="${f1(B.x)}" cy="${f1(B.y)}" r="4" fill="#9aa3b2"/>`;
+   return o}},
+ latzug:{vb:'-75 -215 165 222',
+  phases:[['Ellbogen nach unten ziehen',1.2,0,1,1],['Halten · Rücken zusammendrücken',.8,1,1,1],['Langsam hochlassen · 2–3 s',2.5,1,0,.7],['Oben dehnen',.8,0,0,.35]],
+  errors:['Schaukeln mit dem Oberkörper','Schwung statt Rückenmuskulatur','Schultern rollen nach vorne'],
+  draw(p,err,eff){
+   const b=err?lerp(-6,-44,p):lerp(-14,-20,p),rnd=err?lerp(0,7,p):0;
+   const H=pt(0,-52),K=pt(46,-52),A=pt(54,-6),S=go_(H,58,b),Hd=go_(S,16,b+6);
+   const top=go_(S,56,6),bot=pt(S.x+16,S.y+6),T=pt(lerp(top.x,bot.x,p),lerp(top.y,bot.y,p));
+   const pick=(e1,e2)=>e1.x<e2.x?e1:e2,E=ik(S,T,30,28,pick);
+   const pul=pt(6,-205);
+   let o=floor(-70,90);
+   o+=`<rect x="-8" y="-212" width="28" height="10" rx="3" fill="${AC.eq2}"/><circle cx="${pul.x}" cy="${pul.y}" r="6" fill="${AC.eq}"/>`;
+   o+=`<line x1="${pul.x}" y1="${pul.y}" x2="${f1(T.x)}" y2="${f1(T.y)}" stroke="#7d8696" stroke-width="1.5"/>`;
+   o+=`<rect x="-20" y="-48" width="44" height="7" rx="3" fill="${AC.eq}"/><rect x="-3" y="-41" width="6" height="41" fill="${AC.eq2}"/><circle cx="44" cy="-64" r="6" fill="${AC.eq}"/>`;
+   o+=ln(shift(K,-3,-2),shift(A,-3,-2),11,AC.far)+ln(shift(H,-3,-2),shift(K,-3,-2),14,AC.far);
+   o+=ln(shift(S,-3,-2),shift(E,-3,-2),8,AC.far);
+   o+=trunk(H,S,20,rnd,AC.body);
+   o+=ln(H,K,15,AC.near)+ln(K,A,11,AC.near)+ln(A,pt(A.x+18,-2),7,AC.near);
+   o+=headC(Hd,10);
+   o+=mus(H,S,.3,.9,7,-7,AC.acc,err?eff*.4:eff);
+   if(err)o+=mus(H,S,0,.38,6,-6,AC.bad,eff+.2);
+   o+=ln(S,E,9,AC.near)+ln(E,T,8,AC.near);
+   o+=`<rect x="${f1(T.x-3)}" y="${f1(T.y-3)}" width="6" height="6" rx="1" fill="#9aa3b2"/>`;
+   return o}},
+ seitheben:{vb:'-95 -205 190 212',
+  phases:[['Seitlich heben · Ellbogen führt',1.2,0,1,1],['Oben kurz halten',.6,1,1,1],['Langsam senken · 2–3 s',2.5,1,0,.7],['Spannung halten',.6,0,0,.4]],
+  errors:['Schultern ziehen hoch – Trapez übernimmt','Schwung aus den Beinen','Arme über Schulterhöhe'],
+  draw(p,err,eff){
+   const dip=err?Math.sin(p*Math.PI)*7:0,sy=err?-lerp(0,10,p):0,th=lerp(12,err?112:86,p);
+   const y0=dip;
+   const SL=pt(-24,-150+y0+sy),SR=pt(24,-150+y0+sy),HL=pt(-12,-98+y0),HR=pt(12,-98+y0),N=pt(0,-160+y0);
+   const arm=(S,sg)=>{const E=pt(S.x+sg*30*Math.sin(th*D2R),S.y+30*Math.cos(th*D2R));const fa=th-12;const W=pt(E.x+sg*27*Math.sin(fa*D2R),E.y+27*Math.cos(fa*D2R));return {E,W}};
+   const L=arm(SL,-1),R=arm(SR,1);
+   const kneeOut=dip*.9;
+   let o=floor(-90,90);
+   o+=ln(HL,pt(-16-kneeOut,-50+y0/2),13,AC.near)+ln(pt(-16-kneeOut,-50+y0/2),pt(-14,-6),11,AC.near);
+   o+=ln(HR,pt(16+kneeOut,-50+y0/2),13,AC.near)+ln(pt(16+kneeOut,-50+y0/2),pt(14,-6),11,AC.near);
+   o+=ln(pt(-14,-3),pt(-24,-3),7,AC.near)+ln(pt(14,-3),pt(24,-3),7,AC.near);
+   o+=`<path d="M${f1(SL.x)} ${f1(SL.y)} L${f1(SR.x)} ${f1(SR.y)} L${f1(HR.x+3)} ${f1(HR.y)} L${f1(HL.x-3)} ${f1(HL.y)} Z" fill="${AC.body}" stroke="${AC.body}" stroke-width="10" stroke-linejoin="round"/>`;
+   o+=ln(N,pt(0,-150+y0),8,AC.near)+headC(pt(0,-172+y0+(err?sy*.3:0)),11);
+   if(err){o+=mus(pt(-5,-158+y0+sy*.5),SL,0,1,5,0,AC.bad,eff+.25)+mus(pt(5,-158+y0+sy*.5),SR,0,1,5,0,AC.bad,eff+.25)}
+   for(const [S,a] of [[SL,L],[SR,R]]){
+    o+=ln(S,a.E,9,AC.near)+ln(a.E,a.W,8,AC.near);
+    o+=mus(S,a.E,-.1,.5,7.5,0,AC.acc,err?eff*.45:eff);
+    o+=`<rect x="${f1(a.W.x-7)}" y="${f1(a.W.y-6)}" width="14" height="12" rx="3" fill="${AC.eq}" stroke="#9aa3b2" stroke-width="1.5"/>`;
+   }
+   return o}}
+};
+
+const LEVELS={
+ kniebeuge:{
+  anf:['Stell dich hüftbreit hin, Zehen leicht nach außen.','Brust raus, Bauch fest – als würdest du gleich einen Stoß in den Bauch bekommen.','Setz dich nach hinten-unten, als stünde hinter dir ein Stuhl.','Nur so tief, wie dein Rücken gerade bleibt. Fersen bleiben am Boden.','Tipp für den Anfang: Goblet Squat oder leere Stange.'],
+  fort:['Bracing: tief in den Bauch einatmen, Luft halten, Rumpf rundum anspannen – erst oben ausatmen.','Die Stange bleibt die ganze Bewegung senkrecht über der Fußmitte.','Knie aktiv nach außen über die Zehen schieben, Fußgewölbe halten.','Hüfte und Schultern steigen beim Hochdrücken gleich schnell.'],
+  pro:['Tempo gezielt einsetzen: 3-1-1 für Muskelaufbau, explosiv aus der Hocke für Kraft.','Pausenkniebeuge (2 s unten) gegen eine Schwäche am tiefsten Punkt.','High-Bar = aufrechter, mehr Oberschenkel; Low-Bar = mehr Hüfte/Gesäß, mehr Last.','Über RPE 7–9 steuern: 1–3 saubere Wdh. im Tank lassen.']},
+ latzug:{
+  anf:['Oberschenkel fest unter das Polster klemmen.','Stange etwas breiter als schulterbreit greifen.','Stange zur oberen Brust ziehen – nie hinter den Kopf.','Langsam wieder hochlassen, bis die Arme gestreckt sind.'],
+  fort:['Bewegung mit den Schulterblättern starten: erst nach unten ziehen, dann die Arme.','Denk „Ellbogen in die Hosentaschen“ – die Hände sind nur Haken.','Oberkörper bleibt bei ca. 10–20° Rücklage stabil – kein Schaukeln.','Oben voll strecken und den Latissimus dehnen lassen.'],
+  pro:['Daumenloser Griff reduziert die Bizepsbeteiligung.','Einarmig am Kabel für mehr Dehnung und zum Ausgleich von Seitenunterschieden.','Neutralgriff (V-Griff) schont die Schulter und erlaubt mehr Last.','Teilwiederholungen in der Dehnung am Satzende als Intensitätstechnik.']},
+ seitheben:{
+  anf:['Leichte Hanteln wählen – hier braucht es weniger Gewicht, als man denkt.','Arme seitlich bis Schulterhöhe heben, nicht höher.','Langsam wieder absenken.','Schultern unten lassen, weg von den Ohren.'],
+  fort:['Der Ellbogen führt, die Hand folgt – Ellbogen leicht über der Hand.','Leicht nach vorne lehnen, Arme etwas vor dem Körper führen (Schulterblattebene).','Unten die Spannung nicht abgeben – Hanteln nicht an den Oberschenkeln ablegen.','In 2–3 s absenken.'],
+  pro:['Kabel-Seitheben hält die Spannung unten, wo die Kurzhantel kaum Last hat.','Lean-away-Variante am Kabel für maximale Dehnung.','Mechanischer Drop-Satz: bis zum Versagen sauber, dann Teilwiederholungen im unteren Bereich.','Hohe Wiederholungen (12–20) wirken für die seitliche Schulter sehr gut.']}
+};
+const LVL_NAMES={anf:'Einsteiger',fort:'Fortgeschritten',pro:'Profi'};
+
+let AN=null;
+function animHTML(id){const d=ANIMS[id];return `<div class="anim"><svg id="animSvg" viewBox="${d.vb}" role="img" aria-label="Animierte Ausführung"></svg>
+ <div class="anim-ov"><span id="animPhase"></span></div><div class="anim-prog"><i id="animProg"></i></div></div>
+ <div class="row wrap" style="margin-top:8px"><button class="btn sm ghost" id="animPlay" onclick="animToggle()">⏸ Pause</button><button class="chip" id="animSpd" onclick="animSpeed()">Tempo 1×</button><button class="chip" id="animErrB" onclick="animErr()">Fehler zeigen</button></div>
+ <div id="animErrBox" class="errbox hidden"><b>So bitte nicht:</b><ul class="errs" style="margin-top:6px">${d.errors.map(e=>`<li>${esc(e)}</li>`).join('')}</ul></div>`}
+function animStart(id){animStop();AN={def:ANIMS[id],t:0,last:performance.now(),play:true,speed:1,err:false};
+ const loop=now=>{if(!AN)return;if(!document.getElementById('animSvg')){animStop();return}
+  const dt=Math.min(.1,(now-AN.last)/1000);AN.last=now;if(AN.play)AN.t+=dt*AN.speed;animFrame();AN.raf=requestAnimationFrame(loop)};
+ animFrame();AN.raf=requestAnimationFrame(loop)}
+function animStop(){if(AN&&AN.raf)cancelAnimationFrame(AN.raf);AN=null}
+function animFrame(){
+ const d=AN.def,ph=AN.err?d.phases.map(x=>[x[0],x[1]*(x[2]===x[3]?.25:.5),x[2],x[3],x[4]]):d.phases;
+ const total=ph.reduce((a,x)=>a+x[1],0);let tt=AN.t%total,i=0;while(i<ph.length-1&&tt>ph[i][1]){tt-=ph[i][1];i++}
+ const x=ph[i],f=x[1]?Math.min(1,tt/x[1]):1,p=lerp(x[2],x[3],ease(f));
+ $('#animSvg').innerHTML=d.draw(p,AN.err,x[4]);
+ $('#animPhase').textContent=AN.err?'✕ Falsch: '+d.errors[0]:x[0];
+ $('#animPhase').className=AN.err?'bad':'';
+ $('#animProg').style.width=((AN.t%total)/total*100).toFixed(1)+'%';
+}
+function animToggle(){if(!AN)return;AN.play=!AN.play;AN.last=performance.now();$('#animPlay').textContent=AN.play?'⏸ Pause':'▶ Abspielen'}
+function animSpeed(){if(!AN)return;AN.speed=AN.speed===1?.5:1;$('#animSpd').textContent='Tempo '+(AN.speed===1?'1×':'½×')}
+function animErr(){if(!AN)return;AN.err=!AN.err;AN.t=0;$('#animErrB').classList.toggle('bad',AN.err);$('#animErrB').textContent=AN.err?'Richtig zeigen':'Fehler zeigen';$('#animErrBox').classList.toggle('hidden',!AN.err)}
+function setLevel(id,l){S.settings.level=l;save();$('#lvlBox').innerHTML=levelHTML(id)}
+function levelHTML(id){const l=S.settings.level||'anf',L=LEVELS[id];
+ return `<div class="chips" style="margin-bottom:10px">${Object.entries(LVL_NAMES).map(([k,n])=>`<button class="chip ${k===l?'on':''}" onclick="setLevel('${id}','${k}')">${n}</button>`).join('')}</div><ul class="cues">${L[l].map(c=>`<li>${esc(c)}</li>`).join('')}</ul>`}
+
 /* ---------- Übungsbibliothek ---------- */
 let libGroup='Alle',libQ='';
 function renderLib(){
@@ -448,7 +587,7 @@ function renderLib(){
 function libList(){
  const q=libQ.toLowerCase();
  const list=allEx().filter(e=>(libGroup==='Alle'||(libGroup==='Eigene'?e.custom:e.g===libGroup))&&(!q||e.n.toLowerCase().includes(q)));
- $('#ll').innerHTML=list.map(e=>`<div class="list-item" onclick="showEx('${e.id}')"><div style="width:48px;flex:none">${muscleMini(e)}</div><div class="grow"><div class="ttl">${esc(e.n)}</div><div class="small muted">${esc(e.p.map(m=>MUSCLES[m]).join(', '))}</div><div style="margin-top:4px">${e.custom?'<span class="tag acc">Eigene</span>':''}<span class="tag">${e.t==='c'?'Grundübung':e.t==='k'?'Cardio':'Isolation'}</span>${S.notes[e.id]?'<span class="tag">📝 Notiz</span>':''}</div></div></div>`).join('')||'<div class="empty">Keine Übungen gefunden.</div>';
+ $('#ll').innerHTML=list.map(e=>`<div class="list-item" onclick="showEx('${e.id}')"><div style="width:48px;flex:none">${muscleMini(e)}</div><div class="grow"><div class="ttl">${esc(e.n)}</div><div class="small muted">${esc(e.p.map(m=>MUSCLES[m]).join(', '))}</div><div style="margin-top:4px">${ANIMS[e.id]?'<span class="tag acc">▶ Animation</span>':''}${e.custom?'<span class="tag acc">Eigene</span>':''}<span class="tag">${e.t==='c'?'Grundübung':e.t==='k'?'Cardio':'Isolation'}</span>${S.notes[e.id]?'<span class="tag">📝 Notiz</span>':''}</div></div></div>`).join('')||'<div class="empty">Keine Übungen gefunden.</div>';
 }
 function muscleMini(e){return muscleMap(e.p,e.s||[]).replace('<svg ','<svg style="width:48px;height:50px" ')}
 let objURLs=[];
@@ -457,17 +596,20 @@ async function showEx(id){
  const avoid=(e.av||[]).map(a=>COMPLAINTS[a]);
  const hist=histFor(id).slice(0,5);
  openSheet(`<h2>${esc(e.n)}</h2><div class="small muted">${esc(e.eq||'')}${e.custom?' · eigene Übung':''}</div>
+ ${ANIMS[id]?`<div class="sec">${animHTML(id)}</div>`:''}
  <div class="sec map">${muscleMap(e.p,e.s||[])}<div class="legend"><span><i style="background:#ff7a1a"></i>Zielmuskel</span><span><i style="background:#a5572a"></i>Hilfsmuskel</span></div></div>
  <div class="sec"><h4>Bilder & Videos</h4><div class="media" id="media"><span class="muted small">Lädt…</span></div>
   <label class="btn sm ghost" style="display:inline-block;margin-top:8px">📷 Foto/Video hinzufügen<input type="file" accept="image/*,video/*" hidden onchange="addMedia('${id}',this)"></label>
   <div class="small muted" style="margin-top:6px">Tipp: Lass dich im Gym seitlich filmen – so prüfst du deine Technik selbst.</div></div>
- ${e.cu&&e.cu.length?`<div class="sec"><h4>Saubere Ausführung</h4><ul class="cues">${e.cu.map(c=>`<li>${esc(c)}</li>`).join('')}</ul></div>`:''}
+ ${LEVELS[id]?`<div class="sec"><h4>Saubere Ausführung</h4><div id="lvlBox">${levelHTML(id)}</div></div>`:e.cu&&e.cu.length?`<div class="sec"><h4>Saubere Ausführung</h4><ul class="cues">${e.cu.map(c=>`<li>${esc(c)}</li>`).join('')}</ul></div>`:''}
+ <a class="btn sm ghost vidbtn" href="https://www.youtube.com/results?search_query=${encodeURIComponent(e.n.replace(/\s*\(.*\)/,'')+' richtige Ausführung Technik')}" target="_blank" rel="noopener">▶ Technik-Videos ansehen</a>
  ${e.er&&e.er.length?`<div class="sec"><h4>Abfälschen vermeiden</h4><ul class="errs">${e.er.map(c=>`<li>${esc(c)}</li>`).join('')}</ul></div>`:''}
  ${avoid.length?`<div class="sec warnbox">⚠️ Vorsicht bei Beschwerden: <b>${avoid.join(', ')}</b>. Nur schmerzfrei ausführen oder Alternative wählen.</div>`:''}
  <div class="sec"><h4>Meine Notizen</h4><textarea rows="3" placeholder="z. B. Sitzhöhe 4, Griffbreite, Gefühl…" oninput="S.notes['${id}']=this.value;save()">${esc(S.notes[id]||'')}</textarea></div>
  ${hist.length?`<div class="sec"><h4>Verlauf</h4>${hist.map(h=>`<div class="row between small" style="padding:6px 0;border-top:1px solid var(--line)"><span class="muted">${fmtDate(h.date)}</span><span>${h.sets.map(s=>e.t==='k'?`${s.w} min`:`${s.w}×${s.r}`).join(' · ')}</span></div>`).join('')}</div>`:''}
  <div class="sec row">${S.active?`<button class="btn pri grow" onclick="addEntry('${id}')">Zum Training hinzufügen</button>`:''}${e.custom?`<button class="btn danger" onclick="delCustom('${id}')">Löschen</button>`:''}</div>`);
  renderMedia(id);
+ if(ANIMS[id])animStart(id);
 }
 async function renderMedia(id){
  const items=(await idb.get(id))||[];const box=$('#media');if(!box)return;
